@@ -1,6 +1,7 @@
+import ipaddress
 import socket
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import urllib3
 
@@ -15,11 +16,15 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 class ONVIFDiscovery:
     """ONVIF device discovery using WS-Discovery protocol"""
 
-    def __init__(self, timeout: int = 3, retries: int = 2):
+    def __init__(
+        self, timeout: int = 3, retries: int = 2, subnet: Optional[str] = None
+    ):
         self.multicast_addr = "239.255.255.250"
         self.port = 3702
         self.timeout = timeout
         self.retries = retries
+        # subnet like "192.168.1.0/24": unicast-probe each host instead of multicast
+        self.subnet = subnet
 
     def _create_discovery_socket(self) -> socket.socket:
         """Create and configure socket for discovery"""
@@ -74,7 +79,15 @@ class ONVIFDiscovery:
         """Send WS-Discovery probe message"""
         try:
             probe_message = SOAPMessageBuilder.create_discovery_probe()
-            sock.sendto(probe_message.encode(), (self.multicast_addr, self.port))
+            probe = probe_message.encode()
+
+            if self.subnet:
+                hosts = list(ipaddress.ip_network(self.subnet, strict=False).hosts())
+                Logger.debug(f"Unicast-probing {len(hosts)} host(s) in {self.subnet}")
+                for host in hosts:
+                    sock.sendto(probe, (str(host), self.port))
+            else:
+                sock.sendto(probe, (self.multicast_addr, self.port))
             Logger.debug("Sent discovery probe message")
 
             # Brief pause to allow devices to prepare responses
