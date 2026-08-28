@@ -47,6 +47,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--timeout", type=int, default=3, help="Discovery timeout in seconds"
     )
     discover_group.add_argument(
+        "--subnet",
+        type=str,
+        default=None,
+        help="Unicast-probe a subnet (e.g. 192.168.1.0/24) instead of multicast",
+    )
+    discover_group.add_argument(
         "--debug", action="store_true", help="Enable debug logging"
     )
 
@@ -194,6 +200,15 @@ def process_arguments(args: argparse.Namespace) -> None:
         Logger.error("Max workers must be at least 1")
         sys.exit(1)
 
+    if args.subnet is not None:
+        import ipaddress
+
+        try:
+            ipaddress.ip_network(args.subnet, strict=False)
+        except ValueError as e:
+            Logger.error(f"Invalid --subnet: {e}")
+            sys.exit(1)
+
     # Validate snapshot-related arguments
     if args.snapshot:
         # Check if snapshot directory is valid or can be created
@@ -224,10 +239,10 @@ def process_arguments(args: argparse.Namespace) -> None:
             sys.exit(1)
 
 
-def discover_devices(timeout: int) -> List[Optional[object]]:
+def discover_devices(timeout: int, subnet: Optional[str] = None) -> List[Optional[object]]:
     """Discover ONVIF devices on the network"""
     try:
-        discoverer = ONVIFDiscovery(timeout=timeout)
+        discoverer = ONVIFDiscovery(timeout=timeout, subnet=subnet)
         devices = discoverer.discover()
 
         if not devices:
@@ -421,7 +436,7 @@ def main() -> None:
             return
 
         # Discover devices only if needed
-        devices = discover_devices(args.timeout)
+        devices = discover_devices(args.timeout, args.subnet)
 
         # Skip remaining steps if no devices found
         if not devices:
